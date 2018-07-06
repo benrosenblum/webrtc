@@ -69,6 +69,20 @@ func BaseSessionDescription(b *SessionBuilder) *SessionDescription {
 		},
 	}
 
+	dataDescription := &MediaDescription{
+		MediaName:      "application 9 DTLS/SCTP 5000",
+		ConnectionData: "IN IP4 127.0.0.1",
+		Attributes: []string{
+			"setup:active",
+			"mid:data",
+			"ice-ufrag:" + b.IceUsername,
+			"ice-pwd:" + b.IcePassword,
+			"ice-lite",
+			"fingerprint:sha-256 " + b.Fingerprint,
+			"sctpmap:5000 webrtc-datachannel 1024",
+		},
+	}
+
 	mediaStreamsAttribute := "msid-semantic: WMS"
 	for i, track := range b.Tracks {
 		var attributes *[]string
@@ -96,12 +110,13 @@ func BaseSessionDescription(b *SessionBuilder) *SessionDescription {
 		SessionName:     "-",
 		Timing:          []string{"0 0"},
 		Attributes: []string{
-			"group:BUNDLE audio video",
+			"group:BUNDLE data",
 			mediaStreamsAttribute,
 		},
 		MediaDescriptions: []*MediaDescription{
-			addMediaCandidates(audioMediaDescription),
-			addMediaCandidates(videoMediaDescription),
+			// addMediaCandidates(audioMediaDescription),
+			// addMediaCandidates(videoMediaDescription),
+			addMediaCandidates(dataDescription),
 		},
 	}
 }
