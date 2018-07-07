@@ -53,11 +53,33 @@ func (t TrackType) String() string {
 	}
 }
 
-// New creates a new RTCPeerConfiguration with the provided configuration
-func New(config *RTCConfiguration) (*RTCPeerConnection, error) {
-	return &RTCPeerConnection{
-		config: config,
-	}, nil
+type RTCSdpType int
+
+const (
+	Offer RTCSdpType = iota + 1
+	Pranswer
+	Answer
+	Rollback
+)
+
+func (t RTCSdpType) String() string {
+	switch t {
+	case Offer:
+		return "offer"
+	case Pranswer:
+		return "pranswer"
+	case Answer:
+		return "answer"
+	case Rollback:
+		return "rollback"
+	default:
+		return "Unknown"
+	}
+}
+
+type RTCSessionDescription struct {
+	Typ RTCSdpType
+	Sdp string
 }
 
 // RTCPeerConnection represents a WebRTC connection between itself and a remote peer
@@ -66,7 +88,7 @@ type RTCPeerConnection struct {
 	LocalDescription           *sdp.SessionDescription
 	OnICEConnectionStateChange func(iceConnectionState ice.ConnectionState)
 
-	config *RTCConfiguration
+	config RTCConfiguration
 	tlscfg *dtls.TLSCfg
 
 	iceUfrag string
@@ -79,27 +101,148 @@ type RTCPeerConnection struct {
 	remoteDescription *sdp.SessionDescription
 
 	localTracks []*sdp.SessionBuilderTrack
+
+	signalingState RTCSignalingState
+
+	idpLoginUrl *string
+
+	IsClosed bool
+}
+
+// New creates a new RTCPeerConfiguration with the provided configuration
+func New(config RTCConfiguration) (*RTCPeerConnection, error) {
+
+	r := &RTCPeerConnection{
+		config:         config,
+		signalingState: RTCSignalingState{},
+	}
+	err := r.setConfiguration(config, false)
+	if err != nil {
+		return err
+	}
+	return r, nil
+}
+
+func (r *RTCPeerConnection) SetConfiguration(config RTCConfiguration) error {
+	current := r.config
+
+	if current.PeerIdentity != "" &&
+		config.PeerIdentity != "" &&
+		config.PeerIdentity != current.PeerIdentity {
+		return &InvalidModificationError{Err: ErrModPeerIdentity}
+	}
+
+	if len(current.Certificates) > 0 &&
+		len(config.Certificates) > 0 {
+		if len(config.Certificates) != len(current.Certificates) {
+			return &InvalidModificationError{Err: ErrModCertificates}
+		}
+		for i, cert := range config.Certificates {
+			if !current.Certificates[i].Equals(cert) {
+				return &InvalidModificationError{Err: ErrModCertificates}
+			}
+		}
+	}
+
+	now := time.Now()
+	for _, cert := range config.certificates {
+		if now.After(cert.expires) {
+			return nil, &InvalidAccessError{Err: ErrCertificateExpired}
+		}
+		// TODO: Check certificate 'origin'
+	}
+
+	if config.RtcpMuxPolicy != current.RtcpMuxPolicy {
+		return &InvalidModificationError{Err: ErrModRtcpMuxPolicy}
+	}
+	// TODO: Apply configuration.rtcpMuxPolicy (seems borderline deprecated)
+
+	if r.LocalDescription != nil &&
+		config.IceCandidatePoolSize != current.IceCandidatePoolSize {
+		return &InvalidModificationError{Err: ErrModIceCandidatePoolSize}
+	}
+
+	if len(config.ICEServers) > 0 {
+		for _, server := range config.ICEServers {
+			for _, url := range server.URLs {
+				// Initial parse
+				iceurl, err := NewICEURL(url)
+				if err != nil {
+					return &SyntaxError{Err: err}
+				}
+
+				passCred, isPass := x.(string)
+				oauthCred, isOauth := x.(RTCOAuthCredential)
+				noPass := !isPass && !isOauth
+
+				if iceurl.Type == ICEServerTypeTRUN {
+					if server.Username == "" ||
+						noPass {
+						return &InvalidAccessError{Err: ErrNoTrunCred}
+					}
+					if server.CredentialType == RTCIceCredentialTypePassword &&
+						!isPass {
+						return &InvalidAccessError{Err: ErrTrunCred}
+					}
+					if server.CredentialType == RTCIceCredentialTypeOauth &&
+						!isOauth {
+						return &InvalidAccessError{Err: ErrTrunCred}
+					}
+				}
+
+				// TODO: Add to ICE agent valid server list
+			}
+		}
+	}
+
+	r.config = config
 }
 
 // Public
 
 // SetRemoteDescription sets the SessionDescription of the remote peer
-func (r *RTCPeerConnection) SetRemoteDescription(rawSessionDescription string) error {
+func (r *RTCPeerConnection) SetRemoteDescription(desc RTCSessionDescription) error {
 	if r.remoteDescription != nil {
 		return errors.Errorf("remoteDescription is already defined, SetRemoteDescription can only be called once")
 	}
 
-	r.remoteDescription = &sdp.SessionDescription{}
-	return r.remoteDescription.Unmarshal(rawSessionDescription)
+	r.remoteDescription = &RTCSessionDescription{
+		&sdp.SessionDescription{}}
+	return r.remoteDescription.Unmarshal(desc.Sdp)
+}
+
+type RTCOfferOptions struct {
+	VoiceActivityDetection bool
+	IceRestart             bool
+}
+
+type RTCSignalingState struct {
 }
 
 // CreateOffer starts the RTCPeerConnection and generates the localDescription
-func (r *RTCPeerConnection) CreateOffer() error {
+func (r *RTCPeerConnection) CreateOffer(options *RTCOfferOptions) error {
+	if options != nil {
+		panic("TODO handle options")
+	}
+	if r.IsClosed {
+		return &InvalidStateError{Err: ErrConnectionClosed}
+	}
+	if r.idpLoginUrl != nil {
+		panic("TODO handle identity provider")
+	}
+
 	return errors.Errorf("CreateOffer is not implemented")
 }
 
+type RTCAnswerOptions struct {
+	VoiceActivityDetection bool
+}
+
 // CreateAnswer starts the RTCPeerConnection and generates the localDescription
-func (r *RTCPeerConnection) CreateAnswer() error {
+func (r *RTCPeerConnection) CreateAnswer(options *RTCOfferOptions) error {
+	if options != nil {
+		panic("TODO handle options")
+	}
 	if r.tlscfg != nil {
 		return errors.Errorf("tlscfg is already defined, CreateOffer can only be called once")
 	}
@@ -142,6 +285,12 @@ func (r *RTCPeerConnection) CreateAnswer() error {
 	})
 
 	return nil
+}
+
+// func () generateCertificate
+
+func (r *RTCPeerConnection) SetIdentityProvider(provider string) error {
+	panic("TODO SetIdentityProvider")
 }
 
 // AddTrack adds a new track to the RTCPeerConnection

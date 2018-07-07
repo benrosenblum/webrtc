@@ -1,35 +1,52 @@
 package webrtc
 
-import "strings"
-
-// RTCCredentialType specifies the type of credentials provided
-type RTCCredentialType string
-
-var (
-	// RTCCredentialTypePassword describes username+pasword based credentials
-	RTCCredentialTypePassword RTCCredentialType = "password"
-	// RTCCredentialTypeToken describes token based credentials
-	RTCCredentialTypeToken RTCCredentialType = "token"
+import (
+	"strings"
+	"time"
 )
 
-// RTCServerType is used to identify different ICE server types
-type RTCServerType string
+type RTCIceCredentialType int
 
-var (
-	// RTCServerTypeSTUN is used to identify STUN servers. Prefix is stun:
-	RTCServerTypeSTUN RTCServerType = "STUN"
-	// RTCServerTypeTURN is used to identify TURN servers. Prefix is turn:
-	RTCServerTypeTURN RTCServerType = "TURN"
-	// RTCServerTypeUnknown is used when an ICE server can not be identified properly.
-	RTCServerTypeUnknown RTCServerType = "UnknownType"
+const (
+	// RTCIceCredentialTypePassword describes username+pasword based credentials
+	RTCIceCredentialTypePassword ICECredentialType = iota + 1
+	// RTCIceCredentialTypeOauth describes token based credentials
+	RTCIceCredentialTypeOauth
 )
+
+func (t RTCIceCredentialType) String() string {
+	switch t {
+	case RTCIceCredentialTypePassword:
+		return "password"
+	case RTCIceCredentialTypeOauth:
+		return "oauth"
+	default:
+		return "Unknown"
+	}
+}
+
+type RTCCertificate struct {
+	expires time.Time
+	// TODO: Finish during DTLS implementation
+}
+
+func (c RTCCertificate) Equals(other RTCCertificate) bool {
+	return c.expires == other.expires
+}
 
 // RTCICEServer describes a single ICE server, as well as required credentials
 type RTCICEServer struct {
-	CredentialType RTCCredentialType
 	URLs           []string
 	Username       string
 	Credential     string
+	CredentialType RTCIceCredential
+}
+
+type RTCIceCredential interface{}
+
+type RTCOAuthCredential struct {
+	MacKey      string
+	AccessToken string
 }
 
 func (c RTCICEServer) serverType() RTCServerType {
@@ -44,7 +61,50 @@ func (c RTCICEServer) serverType() RTCServerType {
 	return RTCServerTypeUnknown
 }
 
+type RTCIceTransportPolicy int
+
+const (
+	Relay RTCIceTransportPolicy = iota + 1
+	All
+)
+
+func (t RTCIceTransportPolicy) String() string {
+	switch t {
+	case Relay:
+		return "relay"
+	case All:
+		return "all"
+	default:
+		return "Unknown"
+	}
+}
+
+type RTCRtcpMuxPolicy int
+
+const (
+	Negotiate RTCRtcpMuxPolicy = iota + 1
+	Require
+)
+
+func (t RTCRtcpMuxPolicy) String() string {
+	switch t {
+	case Negotiate:
+		return "negotiate"
+	case Require:
+		return "require"
+	default:
+		return "Unknown"
+	}
+}
+
+type Octet uint8
+
 // RTCConfiguration contains RTCPeerConfiguration options
 type RTCConfiguration struct {
-	ICEServers []RTCICEServer // An array of RTCIceServer objects, each describing one server which may be used by the ICE agent; these are typically STUN and/or TURN servers. If this isn't specified, the ICE agent may choose to use its own ICE servers; otherwise, the connection attempt will be made with no STUN or TURN server available, which limits the connection to local peers.
+	ICEServers           []RTCICEServer // An array of RTCIceServer objects, each describing one server which may be used by the ICE agent; these are typically STUN and/or TURN servers. If this isn't specified, the ICE agent may choose to use its own ICE servers; otherwise, the connection attempt will be made with no STUN or TURN server available, which limits the connection to local peers.
+	IceTransportPolicy   RTCIceTransportPolicy
+	RtcpMuxPolicy        RTCRtcpMuxPolicy
+	PeerIdentity         string
+	Certificates         []RTCCert
+	IceCandidatePoolSize Octet
 }
