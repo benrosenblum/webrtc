@@ -89,7 +89,7 @@ func BaseSessionDescription(b *SessionBuilder) *SessionDescription {
 		mediaStreamsAttribute += " pion" + strconv.Itoa(i)
 	}
 
-	sessionID := strconv.FormatUint(uint64(rand.Uint32())<<32+uint64(rand.Uint32()), 10)
+	sessionID := strconv.FormatUint(newSessionID(), 10)
 	return &SessionDescription{
 		ProtocolVersion: 0,
 		Origin:          "pion-webrtc " + sessionID + " 2 IN IP4 0.0.0.0",
@@ -104,6 +104,10 @@ func BaseSessionDescription(b *SessionBuilder) *SessionDescription {
 			addMediaCandidates(videoMediaDescription),
 		},
 	}
+}
+
+func newSessionID() uint64 {
+	return uint64(rand.Uint32())<<32 + uint64(rand.Uint32())
 }
 
 // GetCodecForPayloadType scans the SessionDescription for the given payloadType and returns the codec

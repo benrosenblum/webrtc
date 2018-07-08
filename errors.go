@@ -33,6 +33,7 @@ const (
 	ErrCertificateExpired = errors.New("certificate expired")
 	ErrNoTrunCred         = errors.New("turn server credentials required")
 	ErrTrunCred           = errors.New("invalid turn server credentials")
+	ErrExistingTrack      = errors.New("track aready exists")
 )
 
 type InvalidAccessError struct {
@@ -74,4 +75,12 @@ type SyntaxError struct {
 
 func (e *SyntaxError) Error() string {
 	return fmt.Sprintf("syntax error: %v", e.Err)
+}
+
+type OverconstrainedError struct {
+	Err error
+}
+
+func (e *OverconstrainedError) Error() string {
+	return fmt.Sprintf("overconstrained error: %v", e.Err)
 }

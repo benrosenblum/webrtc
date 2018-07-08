@@ -7,7 +7,61 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TODO: Migrate to actual ICE/STUN/TURN implementation
+type RTCIceGatheringState int
+
+const (
+	RTCIceGatheringStateNew RTCIceGatheringState = iota + 1
+	RTCIceGatheringStateGathering
+	RTCIceGatheringStateComplete
+)
+
+func (t RTCIceGatheringState) String() string {
+	switch t {
+	case RTCIceGatheringStateNew:
+		return "new"
+	case RTCIceGatheringStateGathering:
+		return "gathering"
+	case RTCIceGatheringStateComplete:
+		return "complete"
+	default:
+		return "Unknown"
+	}
+}
+
+type RTCIceConnectionState int
+
+const (
+	RTCIceConnectionStateNew RTCIceConnectionState = iota + 1
+	RTCIceConnectionStateChecking
+	RTCIceConnectionStateConnected
+	RTCIceConnectionStateCompleted
+	RTCIceConnectionStateDisconnected
+	RTCIceConnectionStateFailed
+	RTCIceConnectionStateClosed
+)
+
+func (t RTCIceConnectionState) String() string {
+	switch t {
+	case RTCIceConnectionStateNew:
+		return "new"
+	case RTCIceConnectionStateChecking:
+		return "checking"
+	case RTCIceConnectionStateConnected:
+		return "connected"
+	case RTCIceConnectionStateCompleted:
+		return "completed"
+	case RTCIceConnectionStateDisconnected:
+		return "disconnected"
+	case RTCIceConnectionStateFailed:
+		return "failed"
+	case RTCIceConnectionStateClosed:
+		return "closed"
+	default:
+		return "Unknown"
+	}
+}
+
+// TODO: Migrate/reconcile the below with the actual ICE/STUN/TURN implementation
 
 const (
 	ErrIceServerAddr = errors.New("invalid ice server address")

@@ -9,10 +9,8 @@ import (
 	"github.com/pions/webrtc/internal/dtls"
 	"github.com/pions/webrtc/internal/network"
 	"github.com/pions/webrtc/internal/sdp"
-	"github.com/pions/webrtc/internal/util"
 	"github.com/pions/webrtc/pkg/ice"
 	"github.com/pions/webrtc/pkg/rtp"
-	"github.com/pions/webrtc/pkg/rtp/codecs"
 
 	"github.com/pkg/errors"
 )
@@ -21,71 +19,39 @@ func init() {
 	rand.Seed(time.Now().UTC().UnixNano())
 }
 
-// RTCSample contains media, and the amount of samples in it
-type RTCSample struct {
-	Data    []byte
-	Samples uint32
-}
+type RTCPeerConnectionState int
 
-// TrackType determines the type of media we are sending receiving
-type TrackType int
-
-// List of supported TrackTypes
 const (
-	VP8 TrackType = iota + 1
-	VP9
-	H264
-	Opus
+	RTCPeerConnectionStateNew RTCPeerConnectionState = iota + 1
+	RTCPeerConnectionStateConnecting
+	RTCPeerConnectionStateConnected
+	RTCPeerConnectionStateDisconnected
+	RTCPeerConnectionStateFailed
+	RTCPeerConnectionStateClosed
 )
 
-func (t TrackType) String() string {
+func (t RTCPeerConnectionState) String() string {
 	switch t {
-	case VP8:
-		return "VP8"
-	case VP9:
-		return "VP9"
-	case H264:
-		return "H264"
-	case Opus:
-		return "Opus"
+	case RTCPeerConnectionStateNew:
+		return "new"
+	case RTCPeerConnectionStateConnecting:
+		return "connecting"
+	case RTCPeerConnectionStateConnected:
+		return "connected"
+	case RTCPeerConnectionStateDisconnected:
+		return "disconnected"
+	case RTCPeerConnectionStateFailed:
+		return "failed"
+	case RTCPeerConnectionStateClosed:
+		return "closed"
 	default:
 		return "Unknown"
 	}
-}
-
-type RTCSdpType int
-
-const (
-	Offer RTCSdpType = iota + 1
-	Pranswer
-	Answer
-	Rollback
-)
-
-func (t RTCSdpType) String() string {
-	switch t {
-	case Offer:
-		return "offer"
-	case Pranswer:
-		return "pranswer"
-	case Answer:
-		return "answer"
-	case Rollback:
-		return "rollback"
-	default:
-		return "Unknown"
-	}
-}
-
-type RTCSessionDescription struct {
-	Typ RTCSdpType
-	Sdp string
 }
 
 // RTCPeerConnection represents a WebRTC connection between itself and a remote peer
 type RTCPeerConnection struct {
-	Ontrack                    func(mediaType TrackType, buffers <-chan *rtp.Packet)
-	LocalDescription           *sdp.SessionDescription
+	// ICE
 	OnICEConnectionStateChange func(iceConnectionState ice.ConnectionState)
 
 	config RTCConfiguration
@@ -98,28 +64,55 @@ type RTCPeerConnection struct {
 	portsLock sync.RWMutex
 	ports     []*network.Port
 
-	remoteDescription *sdp.SessionDescription
+	// Signaling
+	pendingLocalDescription *RTCSessionDescription
+	currentLocalDescription *RTCSessionDescription
+	LocalDescription        *sdp.SessionDescription
 
+	pendingRemoteDescription *RTCSessionDescription
+	currentRemoteDescription *RTCSessionDescription
+	remoteDescription        *sdp.SessionDescription
+
+	// Tracks
 	localTracks []*sdp.SessionBuilderTrack
-
-	signalingState RTCSignalingState
 
 	idpLoginUrl *string
 
-	IsClosed bool
+	IsClosed          bool
+	NegotiationNeeded bool
+
+	lastOffer  string
+	lastAnswer string
+
+	signalingState     RTCSignalingState
+	iceGatheringState  RTCIceGatheringState
+	iceConnectionState RTCIceConnectionState
+	connectionState    RTCPeerConnectionState
+
+	// Media
+	rtpTransceivers []*RTCRtpTransceiver
+	Ontrack         func(*Track)
 }
 
 // New creates a new RTCPeerConfiguration with the provided configuration
 func New(config RTCConfiguration) (*RTCPeerConnection, error) {
 
 	r := &RTCPeerConnection{
-		config:         config,
-		signalingState: RTCSignalingState{},
+		config:             config,
+		signalingState:     RTCSignalingStateStable,
+		iceGatheringState:  RTCIceGatheringStateNew,
+		iceConnectionState: RTCIceConnectionStateNew,
+		connectionState:    RTCPeerConnectionStateNew,
 	}
 	err := r.setConfiguration(config, false)
 	if err != nil {
 		return err
 	}
+
+	r.tlscfg = dtls.NewTLSCfg()
+
+	// TODO: Initialize ICE Agent
+
 	return r, nil
 }
 
@@ -152,10 +145,13 @@ func (r *RTCPeerConnection) SetConfiguration(config RTCConfiguration) error {
 		// TODO: Check certificate 'origin'
 	}
 
+	if config.BundlePolicy != current.BundlePolicy {
+		return &InvalidModificationError{Err: ErrModRtcpMuxPolicy}
+	}
+
 	if config.RtcpMuxPolicy != current.RtcpMuxPolicy {
 		return &InvalidModificationError{Err: ErrModRtcpMuxPolicy}
 	}
-	// TODO: Apply configuration.rtcpMuxPolicy (seems borderline deprecated)
 
 	if r.LocalDescription != nil &&
 		config.IceCandidatePoolSize != current.IceCandidatePoolSize {
@@ -165,7 +161,6 @@ func (r *RTCPeerConnection) SetConfiguration(config RTCConfiguration) error {
 	if len(config.ICEServers) > 0 {
 		for _, server := range config.ICEServers {
 			for _, url := range server.URLs {
-				// Initial parse
 				iceurl, err := NewICEURL(url)
 				if err != nil {
 					return &SyntaxError{Err: err}
@@ -200,141 +195,8 @@ func (r *RTCPeerConnection) SetConfiguration(config RTCConfiguration) error {
 
 // Public
 
-// SetRemoteDescription sets the SessionDescription of the remote peer
-func (r *RTCPeerConnection) SetRemoteDescription(desc RTCSessionDescription) error {
-	if r.remoteDescription != nil {
-		return errors.Errorf("remoteDescription is already defined, SetRemoteDescription can only be called once")
-	}
-
-	r.remoteDescription = &RTCSessionDescription{
-		&sdp.SessionDescription{}}
-	return r.remoteDescription.Unmarshal(desc.Sdp)
-}
-
-type RTCOfferOptions struct {
-	VoiceActivityDetection bool
-	IceRestart             bool
-}
-
-type RTCSignalingState struct {
-}
-
-// CreateOffer starts the RTCPeerConnection and generates the localDescription
-func (r *RTCPeerConnection) CreateOffer(options *RTCOfferOptions) error {
-	if options != nil {
-		panic("TODO handle options")
-	}
-	if r.IsClosed {
-		return &InvalidStateError{Err: ErrConnectionClosed}
-	}
-	if r.idpLoginUrl != nil {
-		panic("TODO handle identity provider")
-	}
-
-	return errors.Errorf("CreateOffer is not implemented")
-}
-
-type RTCAnswerOptions struct {
-	VoiceActivityDetection bool
-}
-
-// CreateAnswer starts the RTCPeerConnection and generates the localDescription
-func (r *RTCPeerConnection) CreateAnswer(options *RTCOfferOptions) error {
-	if options != nil {
-		panic("TODO handle options")
-	}
-	if r.tlscfg != nil {
-		return errors.Errorf("tlscfg is already defined, CreateOffer can only be called once")
-	}
-
-	r.tlscfg = dtls.NewTLSCfg()
-	r.iceUfrag = util.RandSeq(16)
-	r.icePwd = util.RandSeq(32)
-
-	r.portsLock.Lock()
-	defer r.portsLock.Unlock()
-
-	candidates := []string{}
-	basePriority := uint16(rand.Uint32() & (1<<16 - 1))
-	for id, c := range ice.HostInterfaces() {
-		port, err := network.NewPort(c+":0", []byte(r.icePwd), r.tlscfg, r.generateChannel, r.iceStateChange)
-		if err != nil {
-			return err
-		}
-		candidates = append(candidates, fmt.Sprintf("candidate:udpcandidate %d udp %d %s %d typ host", id+1, basePriority, c, port.ListeningAddr.Port))
-		basePriority = basePriority + 1
-		r.ports = append(r.ports, port)
-	}
-	if r.config != nil {
-		for id, server := range r.config.ICEServers {
-			if server.serverType() != RTCServerTypeSTUN {
-				continue
-			}
-			// TODO connect to STUN server
-			_ = id
-			_ = server
-		}
-	}
-
-	r.LocalDescription = sdp.BaseSessionDescription(&sdp.SessionBuilder{
-		IceUsername: r.iceUfrag,
-		IcePassword: r.icePwd,
-		Fingerprint: r.tlscfg.Fingerprint(),
-		Candidates:  candidates,
-		Tracks:      r.localTracks,
-	})
-
-	return nil
-}
-
-// func () generateCertificate
-
 func (r *RTCPeerConnection) SetIdentityProvider(provider string) error {
 	panic("TODO SetIdentityProvider")
-}
-
-// AddTrack adds a new track to the RTCPeerConnection
-// This function returns a channel to push buffers on, and an error if the channel can't be added
-// Closing the channel ends this stream
-func (r *RTCPeerConnection) AddTrack(mediaType TrackType, clockRate uint32) (samples chan<- RTCSample, err error) {
-	if mediaType != VP8 && mediaType != H264 && mediaType != Opus {
-		panic("TODO Discarding packet, need media parsing")
-	}
-
-	trackInput := make(chan RTCSample, 15)
-	go func() {
-		ssrc := rand.Uint32()
-		sdpTrack := &sdp.SessionBuilderTrack{SSRC: ssrc}
-		var payloader rtp.Payloader
-		var payloadType uint8
-		switch mediaType {
-		case Opus:
-			sdpTrack.IsAudio = true
-			payloader = &codecs.OpusPayloader{}
-			payloadType = 111
-
-		case VP8:
-			payloader = &codecs.VP8Payloader{}
-			payloadType = 96
-
-		case H264:
-			payloader = &codecs.H264Payloader{}
-			payloadType = 100
-		}
-
-		r.localTracks = append(r.localTracks, sdpTrack)
-		packetizer := rtp.NewPacketizer(1400, payloadType, ssrc, payloader, rtp.NewRandomSequencer(), clockRate)
-		for {
-			in := <-trackInput
-			packets := packetizer.Packetize(in.Data, in.Samples)
-			for _, p := range packets {
-				for _, port := range r.ports {
-					port.Send(p)
-				}
-			}
-		}
-	}()
-	return trackInput, nil
 }
 
 // Close ends the RTCPeerConnection
@@ -357,6 +219,8 @@ func (r *RTCPeerConnection) generateChannel(ssrc uint32, payloadType uint8) (buf
 	if r.Ontrack == nil {
 		return nil
 	}
+
+	// TODO: Identify RTCRtpCodec instead
 
 	var codec TrackType
 	ok, codecStr := sdp.GetCodecForPayloadType(payloadType, r.remoteDescription)
