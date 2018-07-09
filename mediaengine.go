@@ -1,8 +1,12 @@
 package webrtc
 
 import (
+	"strconv"
+
+	"github.com/pions/webrtc/internal/sdp"
 	"github.com/pions/webrtc/pkg/rtp"
 	"github.com/pions/webrtc/pkg/rtp/codecs"
+	"github.com/pkg/errors"
 )
 
 var rtcMediaEngine = &mediaEngine{}
@@ -34,8 +38,31 @@ func (m *mediaEngine) ClearCodecs() {
 	m.Codecs = nil
 }
 
+func (m *mediaEngine) getCodec(payloadType uint8) (*RTCRtpCodec, error) {
+	for _, codec := range m.codecs {
+		if codec.PayloadType == payloadType {
+			return codec, nil
+		}
+	}
+	return nil, errors.New("Codec not found")
+}
+
+func (m *mediaEngine) getCodecSDP(sdpCodec sdp.Codec) (*RTCRtpCodec, error) {
+	for _, codec := range m.codecs {
+		if codec.Name == sdpCodec.Name &&
+			codec.ClockRate == sdpCodec.ClockRate &&
+			(sdpCodec.EncodingParameters == "" ||
+				strconv.ItoA(int(codec.Channels)) == sdpCodec.EncodingParameters) &&
+			codec.SdpFmtpLine == sdpCodec.Fmtp { // TODO: Protocol specific matching?
+			return codec, nil
+		}
+	}
+	return nil, errors.New("Codec not found")
+
+}
+
 // NewRTCRtpOpusCodec is a helper to create an Opus codec
-func NewRTCRtpOpusCodec(payloadType int, clockrate UnsignedLong, channels UnsignedShort) *RTCRtpCodec {
+func NewRTCRtpOpusCodec(payloadType uint8, clockrate UnsignedLong, channels UnsignedShort) *RTCRtpCodec {
 	NewRTCRtpCodec(RTCRtpCodecKindAudio,
 		"opus",
 		clockrate,
@@ -46,7 +73,7 @@ func NewRTCRtpOpusCodec(payloadType int, clockrate UnsignedLong, channels Unsign
 }
 
 // NewRTCRtpVP8Codec is a helper to create an VP8 codec
-func NewRTCRtpVP8Codec(payloadType int, clockrate UnsignedLong) *RTCRtpCodec {
+func NewRTCRtpVP8Codec(payloadType uint8, clockrate UnsignedLong) *RTCRtpCodec {
 	NewRTCRtpCodec(RTCRtpCodecTypeVideo,
 		"VP8",
 		clockrate,
@@ -56,13 +83,13 @@ func NewRTCRtpVP8Codec(payloadType int, clockrate UnsignedLong) *RTCRtpCodec {
 		&codecs.VP8Payloader{})
 }
 
-// NewRTCRtpH264Codec is a helper to create an VP8 codec
-func NewRTCRtpH264Codec(payloadType int, clockrate UnsignedLong) *RTCRtpCodec {
+// NewRTCRtpH264Codec is a helper to create an H264 codec
+func NewRTCRtpH264Codec(payloadType uint8, clockrate UnsignedLong) *RTCRtpCodec {
 	NewRTCRtpCodec(RTCRtpCodecTypeVideo,
 		"H264",
 		clockrate,
 		0,
-		"",
+		"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
 		payloadType,
 		&codecs.VP8Payloader{})
 }
@@ -85,8 +112,6 @@ func (t RTCRtpCodecType) String() string {
 	}
 }
 
-type PayloadType int
-
 const (
 	PayloadTypeOpus = 111
 	PayloadTypeVP8  = 96
@@ -97,7 +122,7 @@ type RTCRtpCodec struct {
 	RTCRtpCodecCapability
 	Type        RTCRtpCodecType
 	Name        string
-	PayloadType int
+	PayloadType uint8
 	Payloader   rtp.Payloader
 }
 
@@ -107,7 +132,7 @@ func NewRTCRtpCodec(
 	clockrate UnsignedLong,
 	channels UnsignedShort,
 	fmtp string,
-	payloadType int,
+	payloadType uint8,
 	payloader rtp.Payloader,
 ) *RTCRtpCodec {
 	return &RTCRtpCodec{

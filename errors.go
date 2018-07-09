@@ -31,8 +31,8 @@ func (e *UnknownError) Error() string {
 
 const (
 	ErrCertificateExpired = errors.New("certificate expired")
-	ErrNoTrunCred         = errors.New("turn server credentials required")
-	ErrTrunCred           = errors.New("invalid turn server credentials")
+	ErrNoTurnCred         = errors.New("turn server credentials required")
+	ErrTurnCred           = errors.New("invalid turn server credentials")
 	ErrExistingTrack      = errors.New("track aready exists")
 )
 

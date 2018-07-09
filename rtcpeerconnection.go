@@ -170,18 +170,18 @@ func (r *RTCPeerConnection) SetConfiguration(config RTCConfiguration) error {
 				oauthCred, isOauth := x.(RTCOAuthCredential)
 				noPass := !isPass && !isOauth
 
-				if iceurl.Type == ICEServerTypeTRUN {
+				if iceurl.Type == ICEServerTypeTURN {
 					if server.Username == "" ||
 						noPass {
-						return &InvalidAccessError{Err: ErrNoTrunCred}
+						return &InvalidAccessError{Err: ErrNoTurnCred}
 					}
 					if server.CredentialType == RTCIceCredentialTypePassword &&
 						!isPass {
-						return &InvalidAccessError{Err: ErrTrunCred}
+						return &InvalidAccessError{Err: ErrTurnCred}
 					}
 					if server.CredentialType == RTCIceCredentialTypeOauth &&
 						!isOauth {
-						return &InvalidAccessError{Err: ErrTrunCred}
+						return &InvalidAccessError{Err: ErrTurnCred}
 					}
 				}
 
@@ -220,31 +220,21 @@ func (r *RTCPeerConnection) generateChannel(ssrc uint32, payloadType uint8) (buf
 		return nil
 	}
 
-	// TODO: Identify RTCRtpCodec instead
-
-	var codec TrackType
-	ok, codecStr := sdp.GetCodecForPayloadType(payloadType, r.remoteDescription)
-	if !ok {
+	sdpCodec, err := r.remoteDescription.GetCodecForPayloadType(payloadType)
+	if err != nil {
 		fmt.Printf("No codec could be found in RemoteDescription for payloadType %d \n", payloadType)
 		return nil
 	}
 
-	switch codecStr {
-	case "VP8":
-		codec = VP8
-	case "VP9":
-		codec = VP9
-	case "opus":
-		codec = Opus
-	case "H264":
-		codec = H264
-	default:
-		fmt.Printf("Codec %s in not supported by pion-WebRTC \n", codecStr)
-		return nil
+	codec, err := rtcMediaEngine.getCodecSDP(sdpCodec)
+	if err != nil {
+		fmt.Printf("Codec %s in not registered\n", sdpCodec)
 	}
 
+	// TODO: Create receiving Track using codec
+
 	bufferTransport := make(chan *rtp.Packet, 15)
-	go r.Ontrack(codec, bufferTransport)
+	go r.Ontrack(codec.Name, bufferTransport)
 	return bufferTransport
 }
 

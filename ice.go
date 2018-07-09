@@ -71,14 +71,14 @@ type ICEServerType int
 
 const (
 	ICEServerTypeSTUN ICEServerType = iota + 1
-	ICEServerTypeTRUN
+	ICEServerTypeTURN
 )
 
 func (t ICEServerType) String() string {
 	switch t {
 	case ICEServerTypeSTUN:
 		return "stun"
-	case ICEServerTypeTRUN:
+	case ICEServerTypeTURN:
 		return "turn"
 	default:
 		return "Unknown"
@@ -126,12 +126,12 @@ func NewICEURL(address string) (ICEURL, error) {
 		result.Type = ICEServerTypeSTUN
 		result.Secure = true
 
-	case "trun":
-		result.Type = ICEServerTypeTRUN
+	case "turn":
+		result.Type = ICEServerTypeTURN
 		result.Secure = false
 
 	case "turns":
-		result.Type = ICEServerTypeTRUN
+		result.Type = ICEServerTypeTURN
 		result.Secure = true
 
 	default:

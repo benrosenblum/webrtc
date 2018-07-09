@@ -149,7 +149,8 @@ func (r *RTCPeerConnection) CreateOffer(options *RTCOfferOptions) (RTCSessionDes
 			WithValueAttribute("mid", tranceiver.Mid).
 			WithPropertyAttribute(tranceiver.Direction).
 			WithICECredentials(util.RandSeq(16), util.RandSeq(32)). // TODO: get credendials form ICE agent
-			WithPropertyAttribute("ice-lite")                       // TODO: get ICE type from ICE Agent
+			WithPropertyAttribute("ice-lite").                      // TODO: get ICE type from ICE Agent
+			WithPropertyAttribute("rtcp-mux")
 		for _, codec := range rtcMediaEngine.codecs {
 			media.WithRTCRtpCodec(codec)
 		}
