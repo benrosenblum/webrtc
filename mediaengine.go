@@ -91,7 +91,7 @@ func NewRTCRtpH264Codec(payloadType uint8, clockrate UnsignedLong) *RTCRtpCodec 
 		0,
 		"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
 		payloadType,
-		&codecs.VP8Payloader{})
+		&codecs.H264Payloader{})
 }
 
 type RTCRtpCodecType int
