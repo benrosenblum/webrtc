@@ -144,18 +144,30 @@ func (r *RTCPeerConnection) CreateOffer(options *RTCOfferOptions) (RTCSessionDes
 		useIdentity,
 	)
 
+	// mediaStreamsAttribute := ": WMS"
+
 	for _, tranceiver := range r.rtpTransceivers {
+		if tranceiver.Sender == nil ||
+			tranceiver.Sender.Track == nil {
+			continue
+		}
+		codec, _ := rtcMediaEngine.getCodec(tranceiver.Sender.Track.PayloadType)
 		media := sdp.NewJSEPMediaDescription().
+			WithValueAttribute("setup", sdp.ConnectionRoleActive.String()). // TODO: Support other connection types
 			WithValueAttribute("mid", tranceiver.Mid).
-			WithPropertyAttribute(tranceiver.Direction).
+			WithPropertyAttribute(tranceiver.Direction.String()).
 			WithICECredentials(util.RandSeq(16), util.RandSeq(32)). // TODO: get credendials form ICE agent
 			WithPropertyAttribute("ice-lite").                      // TODO: get ICE type from ICE Agent
-			WithPropertyAttribute("rtcp-mux")
-		for _, codec := range rtcMediaEngine.codecs {
-			media.WithRTCRtpCodec(codec)
-		}
+			WithPropertyAttribute("rtcp-mux").                      // TODO: support RTCP fallback
+			WithPropertyAttribute("rtcp-rsize").                    // TODO: Support Reduced-Size RTCP?
+			WithRTCRtpCodec(codec)
+
+			// TODO: Add ssrc lines
+
 		d.WithMedia(media)
 	}
+
+	// d.WithValueAttribute("msid-semantic") // ??
 }
 
 type RTCAnswerOptions struct {
@@ -167,8 +179,51 @@ func (r *RTCPeerConnection) CreateAnswer(options *RTCOfferOptions) error {
 	if options != nil {
 		panic("TODO handle options")
 	}
+	if r.IsClosed {
+		return &InvalidStateError{Err: ErrConnectionClosed}
+	}
+	useIdentity := r.idpLoginUrl != nil
+	if useIdentity {
+		panic("TODO handle identity provider")
+	}
+
+	d := sdp.BaseDescription(
+		r.tlscfg.Fingerprint(),
+		useIdentity,
+	)
+
+	d.WithMedia(getAnswerMedia(RTCRtpCodecTypeAudio))
+	d.WithMedia(getAnswerMedia(RTCRtpCodecTypeVideo))
 
 	// TODO: Move to ICE agent initialisation
+
+	// r.LocalDescription = sdp.BaseSessionDescription(&sdp.SessionBuilder{
+	// 	IceUsername: r.iceUfrag,
+	// 	IcePassword: r.icePwd,
+	// 	Fingerprint: r.tlscfg.Fingerprint(),
+	// 	Candidates:  candidates,
+	// 	Tracks:      r.localTracks,
+	// })
+
+	return nil
+}
+
+func (r *RTCPeerConnection) getAnswerMedia(typ RTCRtpCodecType) *sdp.MediaDescription {
+	media := sdp.NewJSEPMediaDescription().
+		WithValueAttribute("setup", sdp.ConnectionRoleActive.String()). // TODO: Support other connection types
+		WithValueAttribute("mid", typ.String()).
+		WithPropertyAttribute(tranceiver.Direction.String()).
+		WithICECredentials(util.RandSeq(16), util.RandSeq(32)). // TODO: get credendials form ICE agent
+		WithPropertyAttribute("ice-lite").                      // TODO: get ICE type from ICE Agent
+		WithPropertyAttribute("rtcp-mux").                      // TODO: support RTCP fallback
+		WithPropertyAttribute("rtcp-rsize")                     // TODO: Support Reduced-Size RTCP?
+
+	for _, codec := range rtcMediaEngine.getCodecsByKind(typ) {
+		media.WithRTCRtpCodec(codec)
+	}
+
+	// Gather candidates per MediaDescription
+	// TODO: Refactor to new API
 	r.iceUfrag = util.RandSeq(16)
 	r.icePwd = util.RandSeq(32)
 
@@ -186,24 +241,4 @@ func (r *RTCPeerConnection) CreateAnswer(options *RTCOfferOptions) error {
 		basePriority = basePriority + 1
 		r.ports = append(r.ports, port)
 	}
-	if r.config != nil {
-		for id, server := range r.config.ICEServers {
-			if server.serverType() != RTCServerTypeSTUN {
-				continue
-			}
-			// TODO connect to STUN server
-			_ = id
-			_ = server
-		}
-	}
-
-	r.LocalDescription = sdp.BaseSessionDescription(&sdp.SessionBuilder{
-		IceUsername: r.iceUfrag,
-		IcePassword: r.icePwd,
-		Fingerprint: r.tlscfg.Fingerprint(),
-		Candidates:  candidates,
-		Tracks:      r.localTracks,
-	})
-
-	return nil
 }

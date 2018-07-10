@@ -30,8 +30,9 @@ type mediaEngine struct {
 	codecs []*RTCRtpCodec
 }
 
-func (m *mediaEngine) RegisterCodec(codec *RTCRtpCodec) {
+func (m *mediaEngine) RegisterCodec(codec *RTCRtpCodec) int {
 	m.codecs = append(m.codecs, codec)
+	return codec.PayloadType
 }
 
 func (m *mediaEngine) ClearCodecs() {
@@ -58,7 +59,16 @@ func (m *mediaEngine) getCodecSDP(sdpCodec sdp.Codec) (*RTCRtpCodec, error) {
 		}
 	}
 	return nil, errors.New("Codec not found")
+}
 
+func (m *mediaEngine) getCodecsByKind(kind RTCRtpCodecType) []*RTCRtpCodec {
+	var codecs []*RTCRtpCodec
+	for _, codec := range rtcMediaEngine.codecs {
+		if codec.Type == kind {
+			codecs := append(codecs, codec)
+		}
+	}
+	return codecs
 }
 
 // NewRTCRtpOpusCodec is a helper to create an Opus codec

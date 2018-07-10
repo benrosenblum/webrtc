@@ -56,15 +56,7 @@ func NewJSEPMediaDescription(codecPrefs []string) *MediaDescription {
 	d := &MediaDescription{
 		MediaName:      "video 9 UDP/TLS/RTP/SAVPF", // TODO: other transports?
 		ConnectionData: "IN IP4 0.0.0.0",
-		Attributes:     []string{
-			// "setup:active",
-			// "rtcp-mux",
-			// "rtcp-rsize",
-			// "rtpmap:96 VP8/90000",
-			// "rtpmap:98 VP9/90000",
-			// "rtpmap:100 H264/90000",
-			// "fmtp:100 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
-		},
+		Attributes:     []string{},
 	}
 	return d
 }
@@ -97,3 +89,5 @@ func (d *MediaDescription) WithRTCRtpCodec(codec *RTCRtpCodec) {
 	}
 	return d
 }
+
+// TODO: WithMediaSource (ssrc)

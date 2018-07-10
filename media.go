@@ -1,5 +1,11 @@
 package webrtc
 
+import (
+	"math/rand"
+
+	"github.com/pions/webrtc/pkg/rtp"
+)
+
 type RTCRtpReceiver struct {
 	Track         *RTCTrack
 	receiverTrack *RTCTrack
@@ -71,7 +77,6 @@ func (t *RTCRtpTransceiver) setSendingTrack(track *RTCTrack) {
 	default:
 		panic("Invalid state change in RTCRtpTransceiver.setSending")
 	}
-
 }
 
 func newRTCRtpTransceiver(receiver RTCRtpReceiver,
@@ -87,7 +92,7 @@ func newRTCRtpTransceiver(receiver RTCRtpReceiver,
 }
 
 func (t *RTCRtpTransceiver) Stop() error {
-
+	panic("TODO")
 }
 
 // RTCSample contains media, and the amount of samples in it
@@ -97,61 +102,56 @@ type RTCSample struct {
 }
 
 type RTCTrack struct {
-	Kind    string
-	Id      string
-	Label   string
-	ssrc    uint32
-	Samples chan<- RTCSample
-	source  <-chan RTCSample
+	PayloadType int
+	Kind        RTCRtpCodecType
+	Id          string
+	Label       string
+	Ssrc        uint32
+	Samples     chan<- RTCSample
+	source      <-chan RTCSample
 }
 
-func newRTCTrack(payloadType RTCRtpCodecType, id string) *RTCTrack {
+func newRTCTrack(payloadType int, id, label string) (*RTCTrack, error) {
+	codec, err := rtcMediaEngine.getCodec(payloadType)
+	if err != nil {
+		return nil, err
+	}
 
+	trackInput := make(chan RTCSample, 15) // Is the buffering needed?
+	Ssrc := rand.Uint32()
+	go func() {
+		packetizer := rtp.NewPacketizer(
+			1400,
+			payloadType,
+			ssrc,
+			codec.Payloader,
+			rtp.NewRandomSequencer(),
+			codec.ClockRate,
+		)
+		for {
+			in := <-trackInput
+			packets := packetizer.Packetize(in.Data, in.Samples)
+			for _, p := range packets {
+				for _, port := range r.ports {
+					port.Send(p)
+				}
+			}
+		}
+	}()
+
+	t := &RTCTrack{
+		PayloadType: payloadType,
+		Kind:        codec.Type,
+		Id:          id,
+		Label:       label,
+		ssrc:        Ssrc,
+		Samples:     trackInput,
+	}
+
+	// TODO: register track
+
+	return t
 }
-
-// AddTrack adds a new track to the RTCPeerConnection
-// This function returns a channel to push buffers on, and an error if the channel can't be added
-// Closing the channel ends this stream
-// func (r *RTCPeerConnection) AddTrack(mediaType TrackType, clockRate uint32) (samples chan<- RTCSample, err error) {
-// 	if mediaType != VP8 && mediaType != H264 && mediaType != Opus {
-// 		panic("TODO Discarding packet, need media parsing")
-// 	}
-//
-// 	trackInput := make(chan RTCSample, 15)
-// 	go func() {
-// 		ssrc := rand.Uint32()
-// 		sdpTrack := &sdp.SessionBuilderTrack{SSRC: ssrc}
-// 		var payloader rtp.Payloader
-// 		var payloadType uint8
-// 		switch mediaType {
-// 		case Opus:
-// 			sdpTrack.IsAudio = true
-// 			payloader = &codecs.OpusPayloader{}
-// 			payloadType = 111
-//
-// 		case VP8:
-// 			payloader = &codecs.VP8Payloader{}
-// 			payloadType = 96
-//
-// 		case H264:
-// 			payloader = &codecs.H264Payloader{}
-// 			payloadType = 100
-// 		}
-//
-// 		r.localTracks = append(r.localTracks, sdpTrack)
-// 		packetizer := rtp.NewPacketizer(1400, payloadType, ssrc, payloader, rtp.NewRandomSequencer(), clockRate)
-// 		for {
-// 			in := <-trackInput
-// 			packets := packetizer.Packetize(in.Data, in.Samples)
-// 			for _, p := range packets {
-// 				for _, port := range r.ports {
-// 					port.Send(p)
-// 				}
-// 			}
-// 		}
-// 	}()
-// 	return trackInput, nil
-// }
 
 func (r *RTCPeerConnection) AddTrack(track *RTCTrack) (*RTCRtpSender, error) {
 	if r.IsClosed {

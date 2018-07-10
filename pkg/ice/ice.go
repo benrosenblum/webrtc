@@ -2,6 +2,27 @@ package ice
 
 import "net"
 
+type GatheringState int
+
+const (
+	GatheringStateNew GatheringState = iota + 1
+	GatheringStateGathering
+	GatheringStateComplete
+)
+
+func (t GatheringState) String() string {
+	switch t {
+	case GatheringStateNew:
+		return "new"
+	case GatheringStateGathering:
+		return "gathering"
+	case GatheringStateComplete:
+		return "complete"
+	default:
+		return "Unknown"
+	}
+}
+
 // ConnectionState is an enum showing the state of a ICE Connection
 type ConnectionState int
 

@@ -5,20 +5,20 @@ import (
 	"time"
 )
 
-type RTCIceCredentialType int
+type RTCICECredentialType int
 
 const (
-	// RTCIceCredentialTypePassword describes username+pasword based credentials
-	RTCIceCredentialTypePassword ICECredentialType = iota + 1
-	// RTCIceCredentialTypeOauth describes token based credentials
-	RTCIceCredentialTypeOauth
+	// RTCICECredentialTypePassword describes username+pasword based credentials
+	RTCICECredentialTypePassword RTCICECredentialType = iota + 1
+	// RTCICECredentialTypeOauth describes token based credentials
+	RTCICECredentialTypeOauth
 )
 
-func (t RTCIceCredentialType) String() string {
+func (t RTCICECredentialType) String() string {
 	switch t {
-	case RTCIceCredentialTypePassword:
+	case RTCICECredentialTypePassword:
 		return "password"
-	case RTCIceCredentialTypeOauth:
+	case RTCICECredentialTypeOauth:
 		return "oauth"
 	default:
 		return "Unknown"
@@ -39,10 +39,10 @@ type RTCICEServer struct {
 	URLs           []string
 	Username       string
 	Credential     string
-	CredentialType RTCIceCredential
+	CredentialType RTCICECredential
 }
 
-type RTCIceCredential interface{}
+type RTCICECredential interface{}
 
 type RTCOAuthCredential struct {
 	MacKey      string
@@ -61,14 +61,14 @@ func (c RTCICEServer) serverType() RTCServerType {
 	return RTCServerTypeUnknown
 }
 
-type RTCIceTransportPolicy int
+type RTCICETransportPolicy int
 
 const (
-	Relay RTCIceTransportPolicy = iota + 1
+	Relay RTCICETransportPolicy = iota + 1
 	All
 )
 
-func (t RTCIceTransportPolicy) String() string {
+func (t RTCICETransportPolicy) String() string {
 	switch t {
 	case Relay:
 		return "relay"
@@ -120,11 +120,11 @@ func (t RTCRtcpMuxPolicy) String() string {
 
 // RTCConfiguration contains RTCPeerConfiguration options
 type RTCConfiguration struct {
-	ICEServers           []RTCICEServer // An array of RTCIceServer objects, each describing one server which may be used by the ICE agent; these are typically STUN and/or TURN servers. If this isn't specified, the ICE agent may choose to use its own ICE servers; otherwise, the connection attempt will be made with no STUN or TURN server available, which limits the connection to local peers.
-	IceTransportPolicy   RTCIceTransportPolicy
+	ICEServers           []RTCICEServer // An array of RTCICEServer objects, each describing one server which may be used by the ICE agent; these are typically STUN and/or TURN servers. If this isn't specified, the ICE agent may choose to use its own ICE servers; otherwise, the connection attempt will be made with no STUN or TURN server available, which limits the connection to local peers.
+	ICETransportPolicy   RTCICETransportPolicy
 	BundlePolicy         RTCBundlePolicy
 	RtcpMuxPolicy        RTCRtcpMuxPolicy
 	PeerIdentity         string
 	Certificates         []RTCCert
-	IceCandidatePoolSize Octet
+	ICECandidatePoolSize Octet
 }

@@ -23,6 +23,30 @@ type SessionBuilder struct {
 	Tracks []*SessionBuilderTrack
 }
 
+type ConnectionRole int
+
+const (
+	ConnectionRoleActive ConnectionRole = iota + 1
+	ConnectionRolePassive
+	ConnectionRoleActpass
+	ConnectionRoleHoldconn
+)
+
+func (t ConnectionRole) String() string {
+	switch t {
+	case ConnectionRoleActive:
+		return "active"
+	case ConnectionRolePassive:
+		return "passive"
+	case ConnectionRoleActpass:
+		return "actpass"
+	case ConnectionRoleHoldconn:
+		return "holdconn"
+	default:
+		return "Unknown"
+	}
+}
+
 // BaseSessionDescription generates a default SDP response that is ice-lite, initiates the DTLS session and
 // supports VP8, VP9, H264 and Opus
 func BaseSessionDescription(b *SessionBuilder) *SessionDescription {

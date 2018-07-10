@@ -57,9 +57,12 @@ type RTCPeerConnection struct {
 	config RTCConfiguration
 	tlscfg *dtls.TLSCfg
 
-	iceUfrag string
-	icePwd   string
-	iceState ice.ConnectionState
+	// ICE: TODO: Move to ICEAgent
+	iceUfrag           string
+	icePwd             string
+	iceState           ice.ConnectionState
+	iceGatheringState  ice.GatheringState
+	iceConnectionState ice.ConnectionState
 
 	portsLock sync.RWMutex
 	ports     []*network.Port
@@ -73,9 +76,6 @@ type RTCPeerConnection struct {
 	currentRemoteDescription *RTCSessionDescription
 	remoteDescription        *sdp.SessionDescription
 
-	// Tracks
-	localTracks []*sdp.SessionBuilderTrack
-
 	idpLoginUrl *string
 
 	IsClosed          bool
@@ -84,14 +84,12 @@ type RTCPeerConnection struct {
 	lastOffer  string
 	lastAnswer string
 
-	signalingState     RTCSignalingState
-	iceGatheringState  RTCIceGatheringState
-	iceConnectionState RTCIceConnectionState
-	connectionState    RTCPeerConnectionState
+	signalingState  RTCSignalingState
+	connectionState RTCPeerConnectionState
 
 	// Media
 	rtpTransceivers []*RTCRtpTransceiver
-	Ontrack         func(*Track)
+	Ontrack         func(*RTCTrack)
 }
 
 // New creates a new RTCPeerConfiguration with the provided configuration
@@ -100,8 +98,8 @@ func New(config RTCConfiguration) (*RTCPeerConnection, error) {
 	r := &RTCPeerConnection{
 		config:             config,
 		signalingState:     RTCSignalingStateStable,
-		iceGatheringState:  RTCIceGatheringStateNew,
-		iceConnectionState: RTCIceConnectionStateNew,
+		iceGatheringState:  ice.GatheringStateNew,
+		iceConnectionState: ice.ConnectionStateNew,
 		connectionState:    RTCPeerConnectionStateNew,
 	}
 	err := r.setConfiguration(config, false)
@@ -161,7 +159,7 @@ func (r *RTCPeerConnection) SetConfiguration(config RTCConfiguration) error {
 	if len(config.ICEServers) > 0 {
 		for _, server := range config.ICEServers {
 			for _, url := range server.URLs {
-				iceurl, err := NewICEURL(url)
+				iceurl, err := ice.NewURL(url)
 				if err != nil {
 					return &SyntaxError{Err: err}
 				}
@@ -170,16 +168,16 @@ func (r *RTCPeerConnection) SetConfiguration(config RTCConfiguration) error {
 				oauthCred, isOauth := x.(RTCOAuthCredential)
 				noPass := !isPass && !isOauth
 
-				if iceurl.Type == ICEServerTypeTURN {
+				if iceurl.Type == ice.ServerTypeTURN {
 					if server.Username == "" ||
 						noPass {
 						return &InvalidAccessError{Err: ErrNoTurnCred}
 					}
-					if server.CredentialType == RTCIceCredentialTypePassword &&
+					if server.CredentialType == RTCICECredentialTypePassword &&
 						!isPass {
 						return &InvalidAccessError{Err: ErrTurnCred}
 					}
-					if server.CredentialType == RTCIceCredentialTypeOauth &&
+					if server.CredentialType == RTCICECredentialTypeOauth &&
 						!isOauth {
 						return &InvalidAccessError{Err: ErrTurnCred}
 					}
