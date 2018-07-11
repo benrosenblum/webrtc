@@ -6,7 +6,23 @@ import (
 )
 
 const (
-	AttrKeyIdentity = "identity"
+	AttrKeyIdentity        = "identity"
+	AttrKeyGroup           = "group"
+	AttrKeySsrc            = "ssrc"
+	AttrKeySsrcGroup       = "ssrc-group"
+	AttrKeyMsidSemantic    = "msid-semantic"
+	AttrKeyConnectionSetup = "setup"
+	AttrKeyMID             = "mid"
+	AttrKeyICELite         = "ice-lite"
+	AttrKeyRtcpMux         = "rtcp-mux"
+	AttrKeyRtcpRsize       = "rtcp-rsize"
+)
+
+const (
+	SemanticTokenLipSynchronization     = "LS"
+	SemanticTokenFlowIdentification     = "FID"
+	SemanticTokenForwardErrorCorrection = "FEC"
+	SemanticTokenWebRTCMediaStreams     = "WMS"
 )
 
 // API to match draft-ietf-rtcweb-jsep
@@ -90,4 +106,16 @@ func (d *MediaDescription) WithRTCRtpCodec(codec *RTCRtpCodec) {
 	return d
 }
 
-// TODO: WithMediaSource (ssrc)
+func (d *MediaDescription) WithMediaSource(ssrc, cname, streamLabel, label string) *MediaDescription {
+	return d.
+		WithValueAttribute("ssrc", fmt.Sprintf("%s cname:%s", ssrc, cname)). // Deprecated but not pased out?
+		WithValueAttribute("ssrc", fmt.Sprintf("%s msid:%s", ssrc, streamLabel, label)).
+		WithValueAttribute("ssrc", fmt.Sprintf("%s mslabel:%s", ssrc, streamLabel)). // Deprecated but not pased out?
+		WithValueAttribute("ssrc", fmt.Sprintf("%s label:%s", ssrc, label))          // Deprecated but not pased out?
+}
+
+func (d *MediaDescription) WithCandidate(id, int, basePriority uint16, ip string, port int) *MediaDescription {
+	return d.
+		WithValueAttribute("candidate",
+			fmt.Sprintf("udpcandidate %d udp %d %s %d typ host", id, basePriority, ip, port))
+}

@@ -1,7 +1,6 @@
 package webrtc
 
 import (
-	"fmt"
 	"math/rand"
 
 	"github.com/pions/webrtc/internal/network"
@@ -84,21 +83,21 @@ func (t RTCSignalingState) String() string {
 type RTCSdpType int
 
 const (
-	Offer RTCSdpType = iota + 1
-	Pranswer
-	Answer
-	Rollback
+	RTCSdpTypeOffer RTCSdpType = iota + 1
+	RTCSdpTypePranswer
+	RTCSdpTypeAnswer
+	RTCSdpTypeRollback
 )
 
 func (t RTCSdpType) String() string {
 	switch t {
-	case Offer:
+	case RTCSdpTypeOffer:
 		return "offer"
-	case Pranswer:
+	case RTCSdpTypePranswer:
 		return "pranswer"
-	case Answer:
+	case RTCSdpTypeAnswer:
 		return "answer"
-	case Rollback:
+	case RTCSdpTypeRollback:
 		return "rollback"
 	default:
 		return "Unknown"
@@ -141,33 +140,44 @@ func (r *RTCPeerConnection) CreateOffer(options *RTCOfferOptions) (RTCSessionDes
 
 	d := sdp.BaseDescription(
 		r.tlscfg.Fingerprint(),
-		useIdentity,
-	)
+		useIdentity).
+		WithValueAttribute(sdp.AttrKeyGroup, "BUNDLE audio video") // TODO: Support
 
-	// mediaStreamsAttribute := ": WMS"
-
-	for _, tranceiver := range r.rtpTransceivers {
+	var streamlabels string
+	for i, tranceiver := range r.rtpTransceivers {
 		if tranceiver.Sender == nil ||
 			tranceiver.Sender.Track == nil {
 			continue
 		}
-		codec, _ := rtcMediaEngine.getCodec(tranceiver.Sender.Track.PayloadType)
+		track := tranceiver.Sender.Track
+		cname := "poins"      // TODO: Support RTP streams synchronisation
+		steamlabel := "poins" // TODO: Support steam labels
+		codec, _ := rtcMediaEngine.getCodec(track.PayloadType)
 		media := sdp.NewJSEPMediaDescription().
-			WithValueAttribute("setup", sdp.ConnectionRoleActive.String()). // TODO: Support other connection types
-			WithValueAttribute("mid", tranceiver.Mid).
+			WithValueAttribute(sdp.AttrKeyConnectionSetup, sdp.ConnectionRoleActive.String()). // TODO: Support other connection types
+			WithValueAttribute(sdp.AttrKeyMID, tranceiver.Mid).
 			WithPropertyAttribute(tranceiver.Direction.String()).
 			WithICECredentials(util.RandSeq(16), util.RandSeq(32)). // TODO: get credendials form ICE agent
-			WithPropertyAttribute("ice-lite").                      // TODO: get ICE type from ICE Agent
-			WithPropertyAttribute("rtcp-mux").                      // TODO: support RTCP fallback
-			WithPropertyAttribute("rtcp-rsize").                    // TODO: Support Reduced-Size RTCP?
-			WithRTCRtpCodec(codec)
-
-			// TODO: Add ssrc lines
+			WithPropertyAttribute(sdp.AttrKeyICELite).              // TODO: get ICE type from ICE Agent
+			WithPropertyAttribute(sdp.AttrKeyRtcpMux).              // TODO: support RTCP fallback
+			WithPropertyAttribute(sdp.AttrKeyRtcpRsize).            // TODO: Support Reduced-Size RTCP?
+			WithRTCRtpCodec(codec).
+			WithMediaSource(track.Ssrc, cname, steamlabel, track.Label)
+		err := r.addICECandidates(d)
+		if err != nil {
+			return err
+		}
+		streamlabels := streamlabels + " " + steamlabel
 
 		d.WithMedia(media)
 	}
 
-	// d.WithValueAttribute("msid-semantic") // ??
+	d.WithValueAttribute(sdp.AttrKeyMsidSemantic, " "+sdp.SemanticTokenWebRTCMediaStreams+streamlabels)
+
+	return RTCSessionDescription{
+		Typ: RTCSdpTypeOffer,
+		Sdp: peerConnection.LocalDescription.Marshal(),
+	}, nil
 }
 
 type RTCAnswerOptions struct {
@@ -175,7 +185,7 @@ type RTCAnswerOptions struct {
 }
 
 // CreateAnswer starts the RTCPeerConnection and generates the localDescription
-func (r *RTCPeerConnection) CreateAnswer(options *RTCOfferOptions) error {
+func (r *RTCPeerConnection) CreateAnswer(options *RTCOfferOptions) (RTCSessionDescription, error) {
 	if options != nil {
 		panic("TODO handle options")
 	}
@@ -194,51 +204,60 @@ func (r *RTCPeerConnection) CreateAnswer(options *RTCOfferOptions) error {
 
 	d.WithMedia(getAnswerMedia(RTCRtpCodecTypeAudio))
 	d.WithMedia(getAnswerMedia(RTCRtpCodecTypeVideo))
+	d.WithValueAttribute(sdp.AttrKeyMsidSemantic, " "+sdp.SemanticTokenWebRTCMediaStreams+" poins")
 
-	// TODO: Move to ICE agent initialisation
-
-	// r.LocalDescription = sdp.BaseSessionDescription(&sdp.SessionBuilder{
-	// 	IceUsername: r.iceUfrag,
-	// 	IcePassword: r.icePwd,
-	// 	Fingerprint: r.tlscfg.Fingerprint(),
-	// 	Candidates:  candidates,
-	// 	Tracks:      r.localTracks,
-	// })
-
-	return nil
+	return RTCSessionDescription{
+		Typ: RTCSdpTypeAnswer,
+		Sdp: peerConnection.LocalDescription.Marshal(),
+	}, nil
 }
 
 func (r *RTCPeerConnection) getAnswerMedia(typ RTCRtpCodecType) *sdp.MediaDescription {
+
+	cname := "poins"      // TODO: Support RTP streams synchronisation
+	steamlabel := "poins" // TODO: Support steam labels
+
 	media := sdp.NewJSEPMediaDescription().
-		WithValueAttribute("setup", sdp.ConnectionRoleActive.String()). // TODO: Support other connection types
-		WithValueAttribute("mid", typ.String()).
-		WithPropertyAttribute(tranceiver.Direction.String()).
+		WithValueAttribute(sdp.AttrKeyConnectionSetup, sdp.ConnectionRoleActive.String()). // TODO: Support other connection types
+		WithValueAttribute(sdp.AttrKeyMID, typ.String()).
+		WithPropertyAttribute(RTCRtpTransceiverDirectionSendrecv.String()).
 		WithICECredentials(util.RandSeq(16), util.RandSeq(32)). // TODO: get credendials form ICE agent
-		WithPropertyAttribute("ice-lite").                      // TODO: get ICE type from ICE Agent
-		WithPropertyAttribute("rtcp-mux").                      // TODO: support RTCP fallback
-		WithPropertyAttribute("rtcp-rsize")                     // TODO: Support Reduced-Size RTCP?
+		WithPropertyAttribute(sdp.AttrKeyICELite).              // TODO: get ICE type from ICE Agent
+		WithPropertyAttribute(sdp.AttrKeyRtcpMux).              // TODO: support RTCP fallback
+		WithPropertyAttribute(sdp.AttrKeyRtcpRsize)             // TODO: Support Reduced-Size RTCP?
 
 	for _, codec := range rtcMediaEngine.getCodecsByKind(typ) {
 		media.WithRTCRtpCodec(codec)
 	}
 
-	// Gather candidates per MediaDescription
-	// TODO: Refactor to new API
-	r.iceUfrag = util.RandSeq(16)
-	r.icePwd = util.RandSeq(32)
+	// media.WithMediaSource(track.Ssrc, cname, steamlabel, track.Label) // TODO: figure out what track to add.
 
+	err := r.addICECandidates(d)
+	if err != nil {
+		return err
+	}
+}
+
+func (r *RTCPeerConnection) addICECandidates(d *sdp.MediaDescription) error {
 	r.portsLock.Lock()
 	defer r.portsLock.Unlock()
 
-	candidates := []string{}
 	basePriority := uint16(rand.Uint32() & (1<<16 - 1))
 	for id, c := range ice.HostInterfaces() {
 		port, err := network.NewPort(c+":0", []byte(r.icePwd), r.tlscfg, r.generateChannel, r.iceStateChange)
 		if err != nil {
 			return err
 		}
-		candidates = append(candidates, fmt.Sprintf("candidate:udpcandidate %d udp %d %s %d typ host", id+1, basePriority, c, port.ListeningAddr.Port))
+
+		d.WithCandidate(
+			id+1,
+			basePriority,
+			c,
+			port.ListeningAddr.Port,
+		)
+
 		basePriority = basePriority + 1
 		r.ports = append(r.ports, port)
 	}
+	d.WithPropertyAttribute("end-of-candidates") // TODO: Support full trickle-ice
 }
